@@ -283,7 +283,8 @@ Copy into the final PR/close-out:
 
 Update as milestones land. Goal: every line in this section shows `done` with a date + commit.
 
-- [ ] **M0** Prior-art check — *pending*
+- [x] **M0** Prior-art check — *done 2026-09-04* (docs/prior-art.md, commit to add)
+- [ ] **M1** Cache-hoisted ONNX export + parity — *pending*
 - [ ] **M1** Cache-hoisted ONNX export + parity — *pending*
 - [ ] **M2** ORT in Worker, offline processing — *pending*
 - [ ] **M3** SAB ring + AudioWorklet, mic → speakers — *pending*
