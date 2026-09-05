@@ -1,0 +1,10 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+
+# Exported models / generated artifacts (CC-BY-NC-4.0, gitignored)
+benchmarks/export/*.onnx
+*.sarif
+.DS_Store

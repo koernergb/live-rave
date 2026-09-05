@@ -102,11 +102,11 @@ The core risk. 60% of project risk lives here. **Nothing else matters until the 
 
 ### 3.5 Gate
 Checkbox state in `docs/parity/`:
-- [ ] Parity plot committed (flat floor, < 1e-4, 10k buffers).
-- [ ] Reset test passes.
-- [ ] Seed-reproducible noise path passes.
-- [ ] Encoder and decoder exported as separate graphs; manifest JSON committed.
-- [ ] Model picker candidates exported: v2 (+ fallbacks as reached).
+- [x] Parity run committed (flat floor, < 1e-4, 10k buffers). — `python/parity.py --buffers 10000`: max abs err **5.96e-08**, flat floor, no drift.
+- [x] Reset test passes. — zero-init mid-stream (buffer 5000) → fresh-start equivalence.
+- [x] Seed-reproducible noise path passes.
+- [x] Encoder and decoder exported as separate graphs; manifest JSON committed (`benchmarks/export/manifest.json`).
+- [x] Model picker candidates exported: v2 (seed 0, ratio 2048, PQMF 16, latent 1). Fallbacks untouched — v2 green, no ladder needed.
 
 **Do not start M2 until this passes.**
 
@@ -283,9 +283,8 @@ Copy into the final PR/close-out:
 
 Update as milestones land. Goal: every line in this section shows `done` with a date + commit.
 
-- [x] **M0** Prior-art check — *done 2026-09-04* (docs/prior-art.md, commit to add)
-- [ ] **M1** Cache-hoisted ONNX export + parity — *pending*
-- [ ] **M1** Cache-hoisted ONNX export + parity — *pending*
+- [x] **M0** Prior-art check — *done 2026-09-04* (docs/prior-art.md, commit 4f88f22)
+- [x] **M1** Cache-hoisted ONNX export + parity — *done 2026-09-05* (encoder 80 caches / decoder 76, pqmf state threaded; gate 5.96e-08 @ 10k buffers, commit to add)
 - [ ] **M2** ORT in Worker, offline processing — *pending*
 - [ ] **M3** SAB ring + AudioWorklet, mic → speakers — *pending*
 - [ ] **M4** Latent UI + deploy — *pending*
