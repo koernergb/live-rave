@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RAVE-Live — M2 offline file pipeline</title>
+    <style>
+      :root { color-scheme: dark; }
+      body {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        margin: 2rem auto; max-width: 48rem; padding: 0 1rem;
+        background: #0f1115; color: #dce0e8; line-height: 1.5;
+      }
+      h1 { font-size: 1.1rem; letter-spacing: 0.05em; }
+      .box { border: 1px solid #2a2f3a; border-radius: 8px; padding: 1rem; margin: 1rem 0; }
+      button { background: #2a2f3a; color: #dce0e8; border: 1px solid #3a4050;
+        padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; }
+      button:disabled { opacity: 0.4; cursor: not-allowed; }
+      #status { white-space: pre-wrap; font-size: 0.85rem; color: #9aa3b5; }
+      .ok { color: #7ee2a8; } .err { color: #ff8b8b; }
+      a { color: #7aa2f7; }
+    </style>
+  </head>
+  <body>
+    <h1>RAVE-Live · M2 — ORT in a Worker, offline file mode</h1>
+
+    <div class="box">
+      <p><strong>Models:</strong> seeded v2 (ratio&nbsp;2048, latent&nbsp;128).
+        Loaded as <em>encoder.onnx</em> / <em>decoder.onnx</em> with 80/76 cache
+        tensors threaded per block.</p>
+      <label for="file">Input WAV (mono):</label>
+      <input id="file" type="file" accept="audio/wav,.wav" />
+      <button id="run">Load &amp; process</button>
+      <button id="download" disabled>Save output WAV</button>
+      <p><a id="result" style="display:none"></a></p>
+      <hr />
+      <button id="parity">Run browser parity (128 blocks vs Python ref)</button>
+      <button id="reset">Reset caches</button>
+    </div>
+
+    <div class="box">
+      <h2>Log</h2>
+      <pre id="status">idle</pre>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,14 @@
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  base: "./",
+  worker: {
+    format: "es",
+  },
+  build: {
+    target: "es2020",
+  },
+  optimizeDeps: {
+    exclude: ["onnxruntime-web"],
+  },
+});

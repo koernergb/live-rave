@@ -135,8 +135,10 @@ Proves the JS side can reproduce Python parity **before** any realtime plumbing 
 6. [ ] Extension of the parity harness to the browser: run the same 10k-buffer sequence in the Worker, compare against M1 reference.
 
 ### Gate
-- [ ] Web build output is **bit-comparable** to M1 Python output for the same buffered sequence (reuse `docs/parity/` plots; a numeric compare script in `web/`).
-- [ ] File mode works end-to-end in the browser.
+- [x] Web build output is **bit-comparable** to M1 Python output for the same buffered sequence (reuse `docs/parity/` plots; a numeric compare script in `web/`).
+  - `web/scripts/node-parity.ts` (onnxruntime-node): 128 blocks, max abs err 3.93e-08.
+  - `web/e2e/browser-parity.spec.ts` (chromium, onnxruntime-web WASM): 128 blocks, max abs err 4.47e-08. Both vs the reference bundle from `python/gen_reference.py`.
+- [x] File mode works end-to-end in the browser. — WAV in → block pipeline → WAV out (Playwright download assert); PCM16 round-trip unit-checked.
 
 ### Notes
 - The SharedArrayBuffer + threads runtime is not yet required here; enable header-gated features only when M3 needs them, so any COOP/COEP breakage is caught early (headers are already set). **Test with `SharedArrayBuffer` present from the start** to avoid surprise Safari failures.
@@ -284,7 +286,8 @@ Copy into the final PR/close-out:
 Update as milestones land. Goal: every line in this section shows `done` with a date + commit.
 
 - [x] **M0** Prior-art check — *done 2026-09-04* (docs/prior-art.md, commit 4f88f22)
-- [x] **M1** Cache-hoisted ONNX export + parity — *done 2026-09-05* (encoder 80 caches / decoder 76, pqmf state threaded; gate 5.96e-08 @ 10k buffers, commit to add)
+- [x] **M1** Cache-hoisted ONNX export + parity — *done 2026-09-05* (encoder 80 caches / decoder 76, pqmf state threaded; gate 5.96e-08 @ 10k buffers, commit a47893b)
+- [x] **M2** ORT in Worker, offline processing — *done 2026-09-05* (shared pipeline web/node; browser parity 4.47e-08, file mode E2E)
 - [ ] **M2** ORT in Worker, offline processing — *pending*
 - [ ] **M3** SAB ring + AudioWorklet, mic → speakers — *pending*
 - [ ] **M4** Latent UI + deploy — *pending*
