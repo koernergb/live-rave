@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
-import * as ort from "onnxruntime-web";
-import { RavePipeline, adaptSession, OrtLike } from "./pipeline";
+import { RavePipeline } from "./pipeline";
 import { RaveManifest } from "./manifest";
+import { loadModelBundle } from "./models";
 
 export interface LoadMsg {
   type: "load";
@@ -11,6 +11,7 @@ export interface LoadMsg {
     manifest: string;
     warmup: string;
   };
+  buffers?: { encoder: ArrayBuffer; decoder: ArrayBuffer };
 }
 export interface ProcessMsg {
   type: "process";
@@ -44,42 +45,9 @@ const post = (msg: unknown, transfer?: Transferable[]) =>
   );
 
 async function load(msg: LoadMsg): Promise<void> {
-  ort.env.wasm.wasmPaths = "";
-  // Threads need cross-origin isolation (COOP/COEP _headers); fall back to a
-  // single thread otherwise.
-  ort.env.wasm.numThreads =
-    typeof SharedArrayBuffer !== "undefined"
-      ? Math.min(4, navigator.hardwareConcurrency || 1)
-      : 1;
-  const [m, warmup, encM, decM] = await Promise.all([
-    fetch(
-      new URL(msg.urls.manifest, self.location.origin).href,
-    ).then((r) => r.json()) as Promise<RaveManifest>,
-    fetch(
-      new URL(msg.urls.warmup, self.location.origin).href,
-    ).then((r) => r.arrayBuffer()),
-    ort.InferenceSession.create(
-      new URL(msg.urls.encoder, self.location.origin).href,
-      { executionProviders: ["wasm"] },
-    ),
-    ort.InferenceSession.create(
-      new URL(msg.urls.decoder, self.location.origin).href,
-      { executionProviders: ["wasm"] },
-    ),
-  ]);
-  manifest = m;
-  pipeline = new RavePipeline(
-    adaptSession(encM),
-    adaptSession(decM),
-    ort as unknown as OrtLike,
-    {
-    blockSize: m.block_size,
-    latentSize: m.latent_size,
-    fullLatentSize: m.full_latent_size,
-    encCacheShapes: m.caches.encoder,
-    decCacheShapes: m.caches.decoder,
-    warmup: new Float32Array(warmup),
-  });
+  const bundle = await loadModelBundle(msg.urls, { buffers: msg.buffers });
+  manifest = bundle.manifest;
+  pipeline = bundle.pipeline;
   post({ ok: true, type: "loaded" });
 }
 

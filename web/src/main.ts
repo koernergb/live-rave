@@ -1,11 +1,20 @@
 import { decodeWav, encodeWavPcm16 } from "./wav";
 import { RaveManifest } from "./manifest";
+import { createRealtime, crossOriginIsolated } from "./realtime";
 
 const statusEl = document.getElementById("status")!;
 const runBtn = document.getElementById("run") as HTMLButtonElement;
 const dlBtn = document.getElementById("download") as HTMLButtonElement;
 const fileEl = document.getElementById("file") as HTMLInputElement;
 const resultEl = document.getElementById("result") as HTMLAnchorElement;
+const rtStartBtn = document.getElementById("rt-start") as HTMLButtonElement;
+const rtStopBtn = document.getElementById("rt-stop") as HTMLButtonElement;
+const coiEl = document.getElementById("coi")!;
+const rtUnderruns = document.getElementById("rt-underruns")!;
+const rtBlocks = document.getElementById("rt-blocks")!;
+const rtAvg = document.getElementById("rt-avg")!;
+const rtMax = document.getElementById("rt-max")!;
+const rtLat = document.getElementById("rt-lat")!;
 
 const log = (line: string, cls = "") => {
   statusEl.textContent += `${line}\n`;
@@ -29,9 +38,22 @@ const worker = new Worker(new URL("./worker.ts", import.meta.url), {
 let outSamples: Float32Array | null = null;
 let outRate = 44100;
 
+let resolveLoaded: () => void = () => {};
+const loadDone = new Promise<void>((r) => {
+  resolveLoaded = r;
+});
+const awaitLoaded = async () => {
+  await Promise.race([
+    loadDone,
+    new Promise<never>((_, rej) =>
+      setTimeout(() => rej(new Error("timed out waiting for models")), 90_000)),
+  ]);
+};
+
 worker.onmessage = (e: MessageEvent<LogMsg>) => {
   switch (e.data.type) {
     case "loaded":
+      resolveLoaded();
       log("models loaded (encoder 80 / decoder 76 caches)");
       runBtn.disabled = false;
       break;
@@ -61,15 +83,33 @@ worker.onmessage = (e: MessageEvent<LogMsg>) => {
   }
 };
 
-worker.postMessage({
-  type: "load",
-  urls: {
-    encoder: "models/encoder.onnx",
-    decoder: "models/decoder.onnx",
-    manifest: "models/manifest.json",
-    warmup: "models/warmup.bin",
-  },
-});
+const preloadModels = async () => {
+  const enc = await fetch("models/encoder.onnx", { cache: "no-store" }).then((r) => r.arrayBuffer());
+  const dec = await fetch("models/decoder.onnx", { cache: "no-store" }).then((r) => r.arrayBuffer());
+  const warm = await fetch("models/warmup.bin", { cache: "no-store" }).then((r) => r.arrayBuffer());
+  return { encoder: enc, decoder: dec, warmup: warm };
+};
+
+void (async () => {
+  try {
+    const b = await preloadModels();
+    worker.postMessage(
+      {
+        type: "load",
+        urls: {
+          encoder: "models/encoder.onnx",
+          decoder: "models/decoder.onnx",
+          manifest: "models/manifest.json",
+          warmup: "models/warmup.bin",
+        },
+        buffers: { encoder: b.encoder, decoder: b.decoder },
+      },
+      [b.encoder, b.decoder],
+    );
+  } catch (err) {
+    log(`model preload failed: ${(err as Error).message}`, "err");
+  }
+})();
 
 const mulberry32 = (seed: number) => {
   let a = seed >>> 0;
@@ -83,6 +123,11 @@ const mulberry32 = (seed: number) => {
 };
 
 runBtn.onclick = async () => {
+  try {
+    await awaitLoaded();
+  } catch (err) {
+    return log(`models: ${(err as Error).message}`, "err");
+  }
   const file = fileEl.files?.[0];
   if (!file) return log("choose a WAV first", "err");
   log(`loading ${file.name}...`);
@@ -157,7 +202,12 @@ dlBtn.onclick = () => {
   resultEl.click();
 };
 
-document.getElementById("parity")!.onclick = () => {
+document.getElementById("parity")!.onclick = async () => {
+  try {
+    await awaitLoaded();
+  } catch (err) {
+    return log(`models: ${(err as Error).message}`, "err");
+  }
   log("browser parity vs Python reference (128 blocks)...");
   worker.postMessage({
     type: "parity",
@@ -172,4 +222,37 @@ document.getElementById("parity")!.onclick = () => {
 
 document.getElementById("reset")!.onclick = () => {
   worker.postMessage({ type: "reset" });
+};
+
+coiEl.textContent = crossOriginIsolated()
+  ? "cross-origin isolated: yes (SAB / threads available)"
+  : "cross-origin isolated: NO — realtime unavailable (see web/README)";
+coiEl.className = crossOriginIsolated() ? "ok" : "err";
+
+let rt: Awaited<ReturnType<typeof createRealtime>> | null = null;
+
+const renderRt = () => {
+  if (!rt) return;
+  rtUnderruns.textContent = String(rt.underruns());
+  rtBlocks.textContent = String(rt.blocksProcessed());
+  rtAvg.textContent = `${rt.avgTurnaroundMs().toFixed(1)} ms`;
+  rtMax.textContent = `${rt.maxTurnaroundMs().toFixed(1)} ms`;
+  rtLat.textContent = `${rt.latencyMs()} ms`;
+};
+
+rtStartBtn.onclick = async () => {
+  try {
+    rt ??= await createRealtime(log, renderRt);
+    await rt.start();
+    rtStartBtn.disabled = true;
+    rtStopBtn.disabled = false;
+  } catch (err) {
+    log(`realtime: ${(err as Error).message}`, "err");
+  }
+};
+
+rtStopBtn.onclick = () => {
+  rt?.stop();
+  rtStartBtn.disabled = false;
+  rtStopBtn.disabled = true;
 };

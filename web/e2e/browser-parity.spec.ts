@@ -4,7 +4,7 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const url = process.env.PARITY_URL ?? "http://localhost:4173";
+const url = process.env.PARITY_URL ?? "http://localhost:4175";
 
 const logText = (page: Page) => page.locator("#status").textContent();
 
