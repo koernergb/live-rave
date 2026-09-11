@@ -50,9 +50,11 @@ VARIANTS = [
 ]
 
 
-def out_dir(args, key, default=False):
-    if default:
+def out_dir(args, key, default=False, block=None):
+    if default and not args.bench:
         return args.export_out
+    if block is not None:
+        return os.path.join("benchmarks", "bench", str(block))
     return os.path.join(args.models_out, key)
 
 
@@ -66,30 +68,46 @@ def main(argv=None):
     ap.add_argument("--export-out", default="benchmarks/export")
     ap.add_argument("--models-out", default="benchmarks/models")
     ap.add_argument("--no-export", action="store_true")
+    ap.add_argument("--bench", action="store_true",
+                    help="block-size sweep: export ONLY the default variant to "
+                         "benchmarks/bench/<block>/ (no catalog)")
+    ap.add_argument("--bench-blocks", default="2048,4096,8192",
+                    help="comma-separated block sizes for --bench")
     args = ap.parse_args(argv)
 
     t0 = time.time()
     catalog = []
-    for v in VARIANTS:
+
+    jobs = []
+    if args.bench:
+        jobs = [({"key": "v2rt-s0", "config": "rave/configs/v2_rt.gin",
+                  "seed": 0, "label": "v2-live · seed 0", "arch": "v2_rt"},
+                 int(b))
+                for b in args.bench_blocks.split(",")]
+    else:
+        jobs = [(v, BLOCK) for v in VARIANTS]
+
+    for v, block in jobs:
         key = v["key"]
         prefix = v["label"]
         config = os.path.join(args.run_dir, v["config"])
-        out = out_dir(args, key, v.get("default", False))
+        out = out_dir(args, key, v.get("default", False), block)
         makedirs(out)
 
         torch.set_grad_enabled(False)
-        print(f"\n[{key}] building {v['config']} seed={v['seed']}...", flush=True)
+        print(f"\n[{key}] block={block} building {v['config']} seed={v['seed']}...",
+              flush=True)
         model = parity.build_rave(args.run_dir, v["config"], v["seed"])
         full = model.latent_size
         ls = LATENT_SIZE
         print(f"      full_latent={full} latent_cut={ls}", flush=True)
 
-        parity.warmup(model, BLOCK)
+        parity.warmup(model, block)
         ref_model = __import__("copy").deepcopy(model)
         with torch.no_grad():
-            probe = torch.zeros(1, 1, BLOCK)
-            ratio = BLOCK // model.encoder(model.pqmf(probe)).shape[-1]
-            T = BLOCK // ratio
+            probe = torch.zeros(1, 1, block)
+            ratio = block // model.encoder(model.pqmf(probe)).shape[-1]
+            T = block // ratio
         print(f"      ratio={ratio} latent_steps/block={T}", flush=True)
 
         enc_graph = sr.CachedGraph(model, encoder=True, latent_size=ls)
@@ -99,13 +117,13 @@ def main(argv=None):
 
         if not args.no_export:
             print(f"      exporting ONNX graphs -> {out}", flush=True)
-            sr.export_graph(enc_graph, out, "encoder", BLOCK, ls, full, ratio)
-            sr.export_graph(dec_graph, out, "decoder", BLOCK, ls, full, ratio)
+            sr.export_graph(enc_graph, out, "encoder", block, ls, full, ratio)
+            sr.export_graph(dec_graph, out, "decoder", block, ls, full, ratio)
             manifest = {
                 "seed": v["seed"],
                 "name": v["label"],
                 "arch": v["arch"],
-                "block_size": BLOCK,
+                "block_size": block,
                 "ratio": ratio,
                 "sampling_rate": int(model.sr),
                 "latent_size": ls,
@@ -133,14 +151,14 @@ def main(argv=None):
 
         print(f"      parity {N_BUFFERS} buffers...", flush=True)
         torch.manual_seed(1234)
-        audio = torch.randn(1, 1, N_BUFFERS * BLOCK)
+        audio = torch.randn(1, 1, N_BUFFERS * block)
         errors = []
         with torch.no_grad():
             for k in range(N_BUFFERS):
                 torch.manual_seed(k)
                 eps = torch.randn(1, full, T)
                 noise = torch.randn(1, full - ls, T)
-                x = audio[:, :, k * BLOCK:(k + 1) * BLOCK]
+                x = audio[:, :, k * block:(k + 1) * block]
                 z_ref = parity.ref_encode(ref_model, x, eps, ls)
                 y_ref = parity.ref_decode(ref_model, z_ref, noise)
 
@@ -166,6 +184,10 @@ def main(argv=None):
         print(f"      maxerr={maxerr:.3e} head={head:.3e} tail={tail:.3e} "
               f"{'PASS' if ok else 'FAIL'}")
 
+        if not ok:
+            raise SystemExit(f"[{key}] parity FAILED — aborting")
+        if args.bench:
+            continue
         enc_bytes = os.path.getsize(enc_path)
         dec_bytes = os.path.getsize(dec_path)
         warm_bytes = os.path.getsize(os.path.join(out, "warmup.bin"))
@@ -175,7 +197,7 @@ def main(argv=None):
             "label": v["label"],
             "arch": v["arch"],
             "seed": v["seed"],
-            "block_size": BLOCK,
+            "block_size": block,
             "ratio": ratio,
             "latent_steps": T,
             "latent_size": ls,
@@ -192,12 +214,15 @@ def main(argv=None):
         if not ok:
             raise SystemExit(f"[{key}] parity FAILED — aborting catalog")
 
-    idx = os.path.join(args.models_out, "models.json")
-    makedirs(args.models_out)
-    with open(idx, "w") as f:
-        json.dump(catalog, f, indent=2)
-    print(f"\ncatalog -> {idx} ({len(catalog)} models, "
-          f"{(time.time() - t0):.0f}s)")
+    if not args.bench:
+        idx = os.path.join(args.models_out, "models.json")
+        makedirs(args.models_out)
+        with open(idx, "w") as f:
+            json.dump(catalog, f, indent=2)
+        print(f"\ncatalog -> {idx} ({len(catalog)} models, "
+              f"{(time.time() - t0):.0f}s)")
+    else:
+        print(f"\nbench exports done ({time.time() - t0:.0f}s)")
 
 
 if __name__ == "__main__":

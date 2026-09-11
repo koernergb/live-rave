@@ -21,6 +21,9 @@ export interface ModelBundle {
 export interface LoadOptions {
   threads?: number;
   buffers?: { encoder: ArrayBuffer; decoder: ArrayBuffer };
+  /** ORT execution backend. Default "wasm" (single-threaded) is the 24/7
+   * runtime; "wasm-threaded" and "webgpu" are benchmark/experiment cells. */
+  provider?: "wasm" | "wasm-threaded" | "webgpu";
 }
 
 /** Absolute fetch URL from the worker/main origin. */
@@ -31,9 +34,17 @@ export async function loadModelBundle(
   opts: LoadOptions = {},
 ): Promise<ModelBundle> {
   ort.env.wasm.wasmPaths = "";
-  // Single-threaded WASM only: threads deadlock on load under COI and gain
-  // little here (M2 measured ~30ms/buf single-threaded, < 46ms block budget).
-  ort.env.wasm.numThreads = 1;
+  const provider = opts.provider ?? "wasm";
+  if (provider === "wasm-threaded") {
+    ort.env.wasm.numThreads = opts.threads ?? 4;
+  } else {
+    // Single-threaded WASM only for the shipping default: threads deadlock on
+    // load under COI in some builds and gain little (< 46 ms block budget).
+    ort.env.wasm.numThreads = 1;
+  }
+  const executionProviders: ("wasm" | "webgpu")[] = [
+    provider === "webgpu" ? "webgpu" : "wasm",
+  ];
   const fetchText = async (p: string): Promise<string> => {
     const r = await fetch(abs(p));
     if (!r.ok) throw new Error(`fetch ${p}: HTTP ${r.status}`);
@@ -51,24 +62,24 @@ export async function loadModelBundle(
   const [enc, dec] = opts.buffers
     ? await Promise.all([
         ort.InferenceSession.create(opts.buffers.encoder, {
-          executionProviders: ["wasm"],
+          executionProviders,
         }).catch((err) => {
           throw new Error(`session create encoder: ${String(err)}`);
         }),
         ort.InferenceSession.create(opts.buffers.decoder, {
-          executionProviders: ["wasm"],
+          executionProviders,
         }).catch((err) => {
           throw new Error(`session create decoder: ${String(err)}`);
         }),
       ])
     : await Promise.all([
         ort.InferenceSession.create(abs(urls.encoder), {
-          executionProviders: ["wasm"],
+          executionProviders,
         }).catch((err) => {
           throw new Error(`session create ${urls.encoder}: ${String(err)}`);
         }),
         ort.InferenceSession.create(abs(urls.decoder), {
-          executionProviders: ["wasm"],
+          executionProviders,
         }).catch((err) => {
           throw new Error(`session create ${urls.decoder}: ${String(err)}`);
         }),

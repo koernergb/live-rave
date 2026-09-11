@@ -14,6 +14,10 @@ web/public/models/**/*.bin
 web/public/models/*.onnx
 web/public/models/*.bin
 web/public/parity/*.bin
+benchmarks/bench/*/*.onnx
+benchmarks/bench/*/*.bin
+web/public/bench/**/*.onnx
+web/public/bench/**/*.bin
 *.sarif
 .DS_Store
 web/test/*.wav

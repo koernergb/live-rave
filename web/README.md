@@ -1,4 +1,4 @@
-# live-rave-web (M4)
+# live-rave-web (M5)
 
 RAVE-Live: ORT in a Web Worker running a **SharedArrayBuffer ring + AudioWorklet
 realtime path** (mic → EQ → rings → worker → rings → speakers), a **latent
@@ -17,19 +17,45 @@ src/manifest.ts      RaveManifest (+ name/arch) types
 src/worker.ts        browser Web Worker: model load, parity run, block process
 src/realtime.ts      AudioContext + AudioWorklet node + EQ/gain/dry-wet net
 src/realtime-worker.ts  Atomics.wait block loop: encode -> edit -> decode
-src/models.ts        loadModelBundle (main-thread preload or worker fetch)
+src/models.ts        loadModelBundle (main-thread preload or worker fetch; provider param for bench cells)
 src/main.ts          UI: picker, latent sliders, scope, realtime, file mode
+public/bench/*       block-parameterized exports for the M5 sweep (gitignored)
+bench.html           M5 bench page entry (src/bench/main.ts)
 public/worklet/live-processor.js  AudioWorklet: IO-only, crossfade on underrun
 scripts/node-parity.ts   headless parity check with onnxruntime-node
 scripts/copy-models.mjs syncs benchmarks/{export,models,browser-parity} -> public/
 e2e/browser-parity.spec.ts  Playwright gate (chromium + WASM, offline)
 e2e/realtime.spec.ts        Playwright gate: 60 s sustained, fake mic
 e2e/live-ui.spec.ts         Playwright gate: M4 controls, picker, scope, rt
+e2e/bench.spec.ts           Playwright gate/sweep: M5 cells -> ../benchmarks/m5-results.json
 public/models/*      per-model encoder.onnx / decoder.onnx / manifest / warmup
                      + models.json catalog (labels, byte sizes, lazy-load urls)
 public/parity/*      reference bundle (audio/eps/noise/ref_y) from Python
 public/_headers      COOP/COEP for Cloudflare Pages (required for SAB)
 ```
+
+## Benchmarks (M5, M-series Chromium, 44.1 kHz)
+
+Full methodology + caveats: `../docs/benchmarks.md`. Raw per-cell JSON:
+`../benchmarks/m5-results.json`.
+
+| backend | block | model | avg ms | p99 | **RTF** | cold-start |
+|---|---|---|---|---|---|---|
+| wasm single-thread | 2048 | v2-live | 7.70 | 10.5 | **0.166** | 2.3 s |
+| wasm single-thread | 4096 | v2-live | 8.87 | 14.9 | **0.095** | 2.4 s |
+| wasm single-thread | 8192 | v2-live | 12.15 | 14.2 | **0.065** | 2.8 s |
+| wasm single-thread | 2048 | v2 studio | 30.56 | 46.4 | **0.658** | 9.3 s |
+| wasm threaded ×4 | 2048/4096/8192 | v2-live | — | — | **hang** | — |
+| webgpu | 2048/4096/8192 | v2-live | — | — | **no adapter** | — |
+
+Verbatim: `benchmarks/bench/*` onnx (2048/4096/8192) built by
+`python/export_models.py --bench` (ONNX-vs-eager parity PASS ~4e-8), copied to
+`public/bench/`, then `npx playwright test e2e/bench.spec.ts`.
+Kill criterion (RTF > 0.8 everywhere) is **not** triggered — single-thread WASM
+runs at ≤ 0.17. Threaded WASM **hangs on session load** under COI (all three
+cells, recorded, runtime hard-pins `numThreads = 1`); WebGPU has **no hardware
+GPU adapter** in this CI host's headless Chromium (software SwiftShader runs but
+RTF ≫ 1 — needs a GPU host to measure properly).
 
 ## Model catalog (M4)
 
@@ -111,6 +137,49 @@ Reference numbers (M2-M4, seed 0, default v2_rt):
 Both are bit-comparable to the Python reference (`python/gen_reference.py`),
 which replays the exact M1-gate inputs. `.onnx`/`.bin` artifacts are gitignored
 (CC-BY-NC-4.0); regenerate with the commands above.
+
+## Honest "what doesn't work yet"
+
+- **Browsers beyond Chromium on M-series:** everything above is Chromium
+  headless. Safari's COI + WebGPU story and Firefox threading are **unverified**;
+  phone (iPhone/Android) cold-load is pending a deploy. That is the biggest
+  remaining unknown; the first deploy should re-run `e2e/bench.spec.ts` on a
+  production URL and on a real device.
+- **WebGPU:** no hardware adapter in the CI host's headless Chromium, so there is
+  no real WebGPU RTF number yet — only the negative results above.
+- **Threaded WASM:** hangs on load under COI in every attempt; therefore
+  single-threaded is the shipped configuration and the only measured RTF.
+- **Memory:** `performance.memory` is not a standard and is unavailable in this
+  worker context, so peak-memory rows in the M5 table are unimplemented rather
+  than estimated.
+- **Trained weights:** checkpoints are random-init architecture variants; latent
+  knobs act on 16 real dims but there is no musical IR here until a trained
+  checkpoint is dropped in.
+- **v2_small:** not exportable deterministically (see the Model catalog note).
+
+Latency budget (measured, M4, default slack=4, v2-live @ 2048):
+
+| component | ms |
+|---|---|
+| model block 2048 @ 44.1 kHz | 46.4 |
+| ring read-ahead (slack+2) | ~93 |
+| worklet quantum | 2.9 |
+| output device buffer | ~10–20 |
+| worker turnaround (avg) | ~16 |
+| **estimated end-to-end** | **~234** |
+
+## Citations
+
+- RAVE: Caillon & Esling, *RAVE: A Variational Autoencoder for Fast and
+  High-Quality Neural Audio Synthesis*, arXiv:2111.05011, ISMIR 2021.
+- cached_conv / DAFx 2022: Caillon & Esling, *Streaming Sparse Convolution for
+  interactive RAVE*, arXiv:2204.07064.
+- Prior art: RAVE.js (2021, non-streaming ONNX export, MIT) and the streaming
+  (`--streaming`) TorchScript export in
+  [acids-ircam/RAVE](https://github.com/acids-ircam/RAVE). Model assets are
+  CC-BY-NC-4.0 © Caillon/ACIDS (IR-CAM)/IIL — non-commercial, and there will
+  never be a paid tier for these weights. This demo builds on their work; early
+  and unambiguous credit: Caillon/ACIDS.
 
 ## Deploy
 

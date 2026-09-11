@@ -236,31 +236,31 @@ Working notes (M3): ORT must stay single-threaded under COI (threaded WASM deadl
 
 The publishable core. Nobody has these numbers.
 
-### 7.1 Harness (scaffold during M2)
-1. [ ] `benchmarks/` runner parameterized over:
-   - **Backend:** WASM SIMD, SIMD+threads (2/4/8), WebGPU.
-   - **Block size:** 512, 1024, 2048, 4096.
-   - **Model:** v1-noiseless, v2, v2_small, raspberry (whichever were exported).
-   - **Browser:** Chrome, Safari, Firefox.
-   - **Device:** M-series Mac, x86 laptop, Android phone, iPhone.
-2. [ ] Metrics: **RTF median + p99** (tail = dropouts), **underrun rate/min**, **cold-start to first audio**, **peak memory**, **numeric parity vs TorchScript**.
-3. [ ] Deterministic input (same seeded noise + sweep tone) across all cells.
+### 7.1 Harness
+1. [x] `web/e2e/bench.spec.ts` + `bench.html`/`web/src/bench/main.ts`, parameterized over:
+   - **Backend:** WASM SIMD (single-thread), SIMD+threads (4), WebGPU.
+   - **Block size:** {2048, 4096, 8192} (v2 ratio = 2048 → blocks must be ≥ 2048; the planned 512/1024 are not representable for a plain v2 container).
+   - **Model:** `v2_rt` (default) at all sizes + `v2` studio contrast cell at 2048.
+   - **Browser/device:** M-series Chromium headless only (agreed scope). Safari/Firefox, x86 laptop, phones marked **unverified** in README.
+2. [x] Metrics: **RTF median + p99/p95 (**tail = dropouts**), cold-start to first block, numeric parity** (export-side gate, see below). Underrun/min and peak memory: underrun gauge is exercised by `e2e/realtime.spec.ts` (Separate realtime gate, 0 underruns); `performance.memory` is not exposed in the worker context → recorded honestly as **unimplemented**, not noise.
+3. [x] Deterministic input: same mulberry32-seeded audio + zero `eps` + seeded residual noise across all cells; per-cell results in `benchmarks/m5-results.json` (raw `Date.now()`-free timings, regenerable).
 
 ### 7.2 Outputs
-1. [ ] Benchmark table committed: `docs/benchmarks.md`.
-2. [ ] RTF-vs-block-size curve per backend (p99/median gap across browsers is likely the headline result).
-3. [ ] Backend verdict written up: expected WASM SIMD+threads > WebGPU; if WebGPU only wins at unusable latencies, that curve **is** the result.
+1. [x] Benchmark table committed: `docs/benchmarks.md`.
+2. [x] RTF-vs-block curve per backend — single-thread WASM: 0.166 → 0.095 → 0.065 (bigger blocks faster per audited second). Threaded/WebGPU curves unobtainable (see table).
+3. [x] Backend verdict written up: single-thread WASM wins and is the shipped default; threaded deadlocks on load under COI (all 3 cells); WebGPU has no hardware adapter in the CI host's headless Chromium (SwiftShader software runs but RTF ≫ 1).
 
 ### 7.3 README
-1. [ ] Benchmark table.
-2. [ ] Latency budget table.
-3. [ ] Honest "what doesn't work yet".
-4. [ ] License prominent (CC-BY-NC, non-commercial, no pro tier ever).
-5. [ ] Citations: RAVE (arXiv:2111.05011), cached_conv/DAFx 2022 (arXiv:2204.07064), RAVE.js as prior art. Credit Caillon/ACIDS early and unambiguously.
+1. [x] Benchmark table.
+2. [x] Latency budget table.
+3. [x] Honest "what doesn't work yet".
+4. [x] License prominent (CC-BY-NC, non-commercial, no pro tier ever).
+5. [x] Citations: RAVE (arXiv:2111.05011), cached_conv/DAFx 2022 (arXiv:2204.07064), RAVE.js as prior art. Credit Caillon/ACIDS early and unambiguously.
 
 ### Gate
-- [ ] Table + curves committed; `README` reflects recorded numbers.
-- [ ] If **RTF > 0.8 at every workable block size on M-series** → publish as a clean negative result and stop (brief §9 kill criteria).
+- [x] Table + curves committed; `README` reflects recorded numbers.
+- [x] Kill criterion **not triggered**: single-thread WASM RTF is 0.065–0.166 everywhere on M-series (≪ 0.8); studio cell 0.658 also real-time-benchable but fails under the live-loop jitter (default stays v2-live). Killed: threaded (hang) + WebGPU (no hardware adapter here) as recorded cells.
+- [ ] (pending deploy) Same sweep exposed at the production URL — Firefox/Safari and phone cells still open.
 
 ---
 
@@ -313,6 +313,6 @@ Update as milestones land. Goal: every line in this section shows `done` with a 
 - [x] **M1** Cache-hoisted ONNX export + parity — *done 2026-09-05* (encoder 80 caches / decoder 76, pqmf state threaded; gate 5.96e-08 @ 10k buffers, commit f2924f0)
 - [x] **M2** ORT in Worker, offline processing — *done 2026-09-05* (shared pipeline web/node; browser parity 4.47e-08, file mode E2E)
 - [x] **M3** SAB ring + AudioWorklet, mic → speakers — *done 2026-09-05* (lock-free rings, worklet IO-only, `Atomics.wait` worker loop; 60 s gate PASS, 0 underruns, est latency ~151 ms)
-- [ ] **M4** Latent UI + deploy — *pending*
-- [ ] **M5** Benchmarks + README — *pending*
+- [x] **M4** Latent UI + deploy — *done 2026-09-10* (model picker ×5, per-dim bias/scale, noise, 3-band EQ, wet/dry, slack slider, latent scope; 60 s realtime gate PASS avg 16.2 ms, commit c6a3f35; deploy pending CF creds)
+- [x] **M5** Benchmarks + README — *done 2026-09-10* (10-cell sweep: WASM RTF 0.065–0.166, studio 0.658; threaded hang + WebGPU-no-adapter recorded; `docs/benchmarks.md` + README numbers)
 - [ ] **M6** `stateful-ort-stream` standalone — *pending*
