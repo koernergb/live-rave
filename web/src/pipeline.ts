@@ -31,6 +31,7 @@ export const adaptSession = <F, R>(
 
 export interface RaveConfig {
   blockSize: number;
+  ratio: number;
   latentSize: number;
   fullLatentSize: number;
   encCacheShapes: number[][];
@@ -38,6 +39,13 @@ export interface RaveConfig {
   /** Consecutive float32 tiles: [encoder caches..., decoder caches...].
    * Omitted -> cold-start zeros. */
   warmup?: Float32Array;
+}
+
+/** Per-latent-dim bias/scale (`scale` defaults to 1, `bias` to 0). Lengths can
+ * be shorter than latentSize; missing dims are left untouched. */
+export interface LatentEdit {
+  bias?: Float32Array;
+  scale?: Float32Array;
 }
 
 /** One stateful graph's cache tensors, threaded out-of-place per block. */
@@ -97,34 +105,44 @@ export class RavePipeline {
     );
   }
 
-  /** Run one block. x must be `blockSize` samples; eps/noise are single latent
-   * time steps of length fullLatentSize / (fullLatentSize - latentSize).
-   * Returns decoded y. */
+  /** Latent steps per block at the model's frame rate (block / ratio). */
+  get latentSteps(): number {
+    return Math.max(1, Math.round(this.cfg.blockSize / this.cfg.ratio));
+  }
+
+  /** Run one block. x must be `blockSize` samples; eps is the full sampling
+   * latent (fullLatentSize × latentSteps) and noise is the residual noise
+   * channel feed ((full - latent) × latentSteps). `edit` applies
+   * per-dimension bias/scale to the sampled latent before decode. Returns the
+   * decoded block and the (possibly edited) latent for live scoping. */
   async process(
     x: Float32Array,
     eps: Float32Array,
     noise: Float32Array,
-  ): Promise<Float32Array> {
-    const T = this.ort.Tensor;
+    edit?: LatentEdit,
+  ): Promise<{ y: Float32Array; z: Float32Array }> {
+    const T = this.latentSteps;
+    const ls = this.cfg.latentSize;
+    const fl = this.cfg.fullLatentSize;
+    const Ort = this.ort.Tensor;
     const encOut = await this.encSess.run({
-      x: new T(x.slice(), [1, 1, this.cfg.blockSize]),
-      eps: new T(eps.slice(), [1, this.cfg.fullLatentSize, 1]),
-      ...cacheFeeds(this.enc, this.cfg.encCacheShapes, T),
+      x: new Ort(x.slice(), [1, 1, this.cfg.blockSize]),
+      eps: new Ort(eps.slice(), [1, fl, T]),
+      ...cacheFeeds(this.enc, this.cfg.encCacheShapes, Ort),
     });
     this.updateCaches(this.enc, encOut);
 
-    const z = new Float32Array(encOut.z.data.subarray(0, this.cfg.latentSize));
+    const z = new Float32Array(encOut.z.data.subarray(0, ls * T));
+    applyEdit(z, edit, ls, T);
+
     const decOut = await this.decSess.run({
-      z: new T(z, [1, this.cfg.latentSize, 1]),
-      noise: new T(noise.slice(), [
-        1,
-        this.cfg.fullLatentSize - this.cfg.latentSize,
-        1,
-      ]),
-      ...cacheFeeds(this.dec, this.cfg.decCacheShapes, T),
+      z: new Ort(z.slice(), [1, ls, T]),
+      noise: new Ort(noise.slice(), [1, fl - ls, T]),
+      ...cacheFeeds(this.dec, this.cfg.decCacheShapes, Ort),
     });
     this.updateCaches(this.dec, decOut);
-    return new Float32Array(decOut.y.data);
+    const y = new Float32Array(decOut.y.data.subarray(0, this.cfg.blockSize));
+    return { y, z };
   }
 
   private updateCaches(
@@ -149,4 +167,28 @@ function cacheFeeds(
     feeds[`cache_${i}`] = new T(c.slice(), [1, ...shapes[i]]);
   });
   return feeds;
+}
+
+/** z is laid out [dim, step]. Apply linear per-dim edit: z = z * scale + bias. */
+function applyEdit(
+  z: Float32Array,
+  edit: LatentEdit | undefined,
+  ls: number,
+  T: number,
+): void {
+  if (!edit) return;
+  const n = Math.min(ls, edit.scale?.length ?? 0);
+  const scale = edit.scale ?? new Float32Array(0);
+  for (let d = 0; d < n; d++) {
+    const s = scale[d];
+    if (s === 1) continue;
+    for (let t = 0; t < T; t++) z[d * T + t] *= s;
+  }
+  const m = Math.min(ls, edit.bias?.length ?? 0);
+  const bias = edit.bias ?? new Float32Array(0);
+  for (let d = 0; d < m; d++) {
+    const b = bias[d];
+    if (b === 0) continue;
+    for (let t = 0; t < T; t++) z[d * T + t] += b;
+  }
 }

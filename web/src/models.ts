@@ -79,6 +79,7 @@ export async function loadModelBundle(
     ort as unknown as OrtLike,
     {
       blockSize: m.block_size,
+      ratio: m.ratio,
       latentSize: m.latent_size,
       fullLatentSize: m.full_latent_size,
       encCacheShapes: m.caches.encoder,

@@ -36,6 +36,7 @@ async function main(): Promise<number> {
 
   const pipeline = new RavePipeline(enc, dec, ort, {
     blockSize: manifest.block_size,
+    ratio: manifest.ratio,
     latentSize: manifest.latent_size,
     fullLatentSize: manifest.full_latent_size,
     encCacheShapes: manifest.caches.encoder,
@@ -57,7 +58,7 @@ async function main(): Promise<number> {
   let bad = 0;
   const t0 = performance.now();
   for (let k = 0; k < n; k++) {
-    const y = await pipeline.process(
+    const { y } = await pipeline.process(
       audio.subarray(k * B, (k + 1) * B),
       eps.subarray(k * fl, (k + 1) * fl),
       noise.subarray(k * (fl - ls), (k + 1) * (fl - ls)),

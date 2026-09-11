@@ -23,7 +23,9 @@ export const LIVE = 6; // set by main when output connects (streaming gate)
 
 export const CONTROL_LEN = 7;
 
-export const ringCap = (): number => BLOCK * RING_BLOCKS;
+export function ringCap(blocks = RING_BLOCKS): number {
+  return BLOCK * blocks;
+}
 
 export interface Rings {
   sabControl: SharedArrayBuffer;
@@ -31,10 +33,11 @@ export interface Rings {
   control: Int32Array;
   data: Float32Array;
   cap: number;
+  blocks: number;
 }
 
-export function makeRings(): Rings {
-  const cap = ringCap();
+export function makeRings(blocks = RING_BLOCKS): Rings {
+  const cap = ringCap(blocks);
   const sabControl = new SharedArrayBuffer(CONTROL_LEN * 4);
   const sabData = new SharedArrayBuffer(cap * 2 * 4);
   return {
@@ -43,6 +46,7 @@ export function makeRings(): Rings {
     control: new Int32Array(sabControl),
     data: new Float32Array(sabData),
     cap,
+    blocks,
   };
 }
 

@@ -5,6 +5,7 @@ import { loadModelBundle } from "./models";
 
 export interface LoadMsg {
   type: "load";
+  key?: string;
   urls: {
     encoder: string;
     decoder: string;
@@ -18,6 +19,9 @@ export interface ProcessMsg {
   x: Float32Array;
   eps: Float32Array;
   noise: Float32Array;
+  bias?: Float32Array;
+  scale?: Float32Array;
+  noiseGain?: number;
 }
 export interface ParityMsg {
   type: "parity";
@@ -32,6 +36,13 @@ export interface ResetMsg {
   type: "reset";
 }
 export type WorkerMsg = LoadMsg | ProcessMsg | ParityMsg | ResetMsg;
+
+export type WorkerEvent =
+  | { type: "loaded"; key?: string }
+  | { type: "processed"; y: Float32Array }
+  | { type: "parity"; ok: boolean; n: number; maxerr: number; bad: number; msPerBuf: number }
+  | { type: "reset"; ok: true }
+  | { type: "error"; message: string };
 
 let pipeline: RavePipeline | null = null;
 let manifest: RaveManifest | null = null;
@@ -48,7 +59,7 @@ async function load(msg: LoadMsg): Promise<void> {
   const bundle = await loadModelBundle(msg.urls, { buffers: msg.buffers });
   manifest = bundle.manifest;
   pipeline = bundle.pipeline;
-  post({ ok: true, type: "loaded" });
+  post({ ok: true, type: "loaded", key: msg.key });
 }
 
 async function parity(msg: ParityMsg): Promise<void> {
@@ -79,7 +90,7 @@ async function parity(msg: ParityMsg): Promise<void> {
     );
     const epsK = parityBundle.eps.subarray(k * fl, (k + 1) * fl);
     const noiseK = parityBundle.noise.subarray(k * (fl - ls), (k + 1) * (fl - ls));
-    const y = await pipeline.process(x, epsK, noiseK);
+    const { y } = await pipeline.process(x, epsK, noiseK);
     const ref = parityBundle.refY.subarray(
       k * manifest.block_size,
       (k + 1) * manifest.block_size,
@@ -98,8 +109,20 @@ async function parity(msg: ParityMsg): Promise<void> {
 
 async function process(msg: ProcessMsg): Promise<void> {
   if (!pipeline) throw new Error("models not loaded");
-  const y = await pipeline.process(msg.x, msg.eps, msg.noise);
+  const noise = msg.noiseGain && msg.noiseGain !== 1
+    ? scaleNoise(msg.noise, msg.noiseGain)
+    : msg.noise;
+  const { y } = await pipeline.process(msg.x, msg.eps, noise, {
+    bias: msg.bias,
+    scale: msg.scale,
+  });
   post({ type: "processed", y }, [y.buffer as Transferable]);
+}
+
+function scaleNoise(noise: Float32Array, gain: number): Float32Array {
+  const out = new Float32Array(noise.length);
+  for (let i = 0; i < noise.length; i++) out[i] = noise[i] * gain;
+  return out;
 }
 
 async function reset(): Promise<void> {

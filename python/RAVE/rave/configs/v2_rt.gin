@@ -1,0 +1,8 @@
+include "configs/v2.gin"
+
+# Realtime-lean v2: same architecture, capacity 48 like v2_small but WITHOUT the
+# noise/FIR excitation path (torch 2.2 can't export its complex-FFT ops to ONNX).
+# Blocks of 2048 @44.1kHz must average well under 46ms of WASM turnaround; the
+# full-capacity (96) v2 does ~62ms on the default latent cut, so this lighter
+# variant is the live default while the studio variants stay in the picker.
+CAPACITY = 48

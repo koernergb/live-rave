@@ -1,6 +1,9 @@
-/** Manifest layout produced by python/parity.py (see benchmarks/export/manifest.json). */
+/** Manifest layout produced by python/parity.py / python/export_models.py
+ * (see benchmarks/export/manifest.json). */
 export interface RaveManifest {
   seed: number;
+  name?: string;
+  arch?: string;
   block_size: number;
   ratio: number;
   sampling_rate: number;

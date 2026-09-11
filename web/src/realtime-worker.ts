@@ -18,13 +18,20 @@ export interface RealtimeStartMsg {
   control: SharedArrayBuffer;
   rings: SharedArrayBuffer;
   cap: number;
+  slackBlocks: number;
   urls: ModelUrls;
   buffers?: { encoder: ArrayBuffer; decoder: ArrayBuffer };
+}
+export interface RealtimeParamMsg {
+  type: "params";
+  bias?: number[];
+  scale?: number[];
+  noiseGain?: number;
 }
 export interface RealtimeStopMsg {
   type: "stop";
 }
-export type RealtimeMsg = RealtimeStartMsg | RealtimeStopMsg;
+export type RealtimeMsg = RealtimeStartMsg | RealtimeParamMsg | RealtimeStopMsg;
 
 const mulberry32 = (seed: number): (() => number) => {
   let a = seed | 0;
@@ -39,8 +46,12 @@ const mulberry32 = (seed: number): (() => number) => {
 let ctrl: Int32Array | null = null;
 let data: Float32Array | null = null;
 let cap = 0;
+let slack = 4;
 let pipeline: RavePipeline | null = null;
 let stopped = false;
+let bias = new Float32Array(0);
+let scale = new Float32Array(0);
+let noiseGain = 1;
 
 const post = (msg: unknown) =>
   (postMessage as (m: unknown) => void)(msg);
@@ -60,12 +71,22 @@ self.onmessage = async (e: MessageEvent<RealtimeMsg>) => {
     post({ type: "stopped" });
     return;
   }
+  if (m.type === "params") {
+    if (m.bias) for (let i = 0; i < Math.min(m.bias.length, bias.length); i++) bias[i] = m.bias[i];
+    if (m.scale) for (let i = 0; i < Math.min(m.scale.length, scale.length); i++) scale[i] = m.scale[i];
+    if (m.noiseGain !== undefined) noiseGain = m.noiseGain;
+    return;
+  }
   if (m.type !== "start") return;
   stopped = false;
   ctrl = new Int32Array(m.control);
   data = new Float32Array(m.rings);
   cap = m.cap;
   if (!cap) cap = data.length / 2;
+  slack = m.slackBlocks;
+  bias = new Float32Array(0);
+  scale = new Float32Array(0);
+  noiseGain = 1;
 
   const bundle = await loadModelBundle(m.urls, {
     threads: 1,
@@ -76,29 +97,36 @@ self.onmessage = async (e: MessageEvent<RealtimeMsg>) => {
 
   const fl = bundle.manifest.full_latent_size;
   const ls = bundle.manifest.latent_size;
+  const T = pipeline.latentSteps;
+  bias = new Float32Array(ls).fill(0);
+  scale = new Float32Array(ls).fill(1);
 
   let rng = mulberry32(0x5eed);
-  const eps = new Float32Array(fl);
-  const noise = new Float32Array(fl - ls);
+  const eps = new Float32Array(fl * T);
+  const noise = new Float32Array((fl - ls) * T);
   const buf = new Float32Array(BLOCK);
 
-  // Prime: run warmup blocks so the output ring starts ahead and first connect
-  // never underruns (4 blocks ~186 ms read-ahead).
-  const prime = await pipeline.process(buf, eps, noise);
-  for (let b = 0; b < 4; b++) {
-    writeRing(data as Float32Array, cap, b * BLOCK, prime, 0, BLOCK);
+  // Prime: warm a block so the output ring starts `slack` blocks ahead; first
+  // connect never underruns. Read-ahead equals the stability slider (+ the
+  // worker's fixed processing lag).
+  for (let i = 0; i < fl * T; i++) eps[i] = 0;
+  for (let i = 0; i < (fl - ls) * T; i++) noise[i] = rng() * 2 - 1;
+  const { y: primeY } = await pipeline.process(buf, eps, noise, {
+    bias,
+    scale,
+  });
+  for (let b = 0; b < slack; b++) {
+    writeRing(data as Float32Array, cap, b * BLOCK, primeY, 0, BLOCK);
   }
-  Atomics.store(ctrl as Int32Array, OW, 4 * BLOCK);
+  Atomics.store(ctrl as Int32Array, OW, slack * BLOCK);
 
   post({ type: "ready", ok: true });
-  post({ type: "rt-log", message: `models loaded + primed (cap=${cap})` });
+  post({ type: "rt-log", message: `models loaded + primed (slack=${slack})` });
 
   let blocks = 0;
   let sumMs = 0;
   let maxMs = 0;
   let lastEv = 0;
-  let slowCount = 0;
-  const slowSamples: number[] = [];
 
   while (!stopped) {
     const iw = Atomics.load(ctrl as Int32Array, IW);
@@ -106,33 +134,28 @@ self.onmessage = async (e: MessageEvent<RealtimeMsg>) => {
     const ow = Atomics.load(ctrl as Int32Array, OW);
     const orr = Atomics.load(ctrl as Int32Array, OR);
     if (iw - ir < BLOCK || ow - orr >= cap - BLOCK + 1) {
-      // Need a full input block AND output space; park until the worklet
-      // signals progress.
       lastEv = Atomics.load(ctrl as Int32Array, WORK_EV);
       Atomics.wait(ctrl as Int32Array, WORK_EV, lastEv);
       continue;
     }
 
     const t0 = Date.now();
-    readRing(data as Float32Array, cap, ir, BLOCK, buf);
-    // No-op latent manipulation for M3: zero eps (mean latent), fresh noise.
-    for (let i = 0; i < fl; i++) eps[i] = 0;
-    for (let i = 0; i < fl - ls; i++) noise[i] = rng() * 2 - 1;
+    readRing(data as Float32Array, cap, ir, BLOCK, buf, 0);
+    // Sampling latent: tightened around the mean (zero eps) by default.
+    for (let i = 0; i < fl * T; i++) eps[i] = 0;
+    for (let i = 0; i < (fl - ls) * T; i++) noise[i] = (rng() * 2 - 1) * noiseGain;
 
-    const y = await pipeline.process(buf, eps, noise);
+    const { y, z } = await pipeline.process(buf, eps, noise, { bias, scale });
     writeRing(data as Float32Array, cap, ow, y, 0, BLOCK);
     Atomics.store(ctrl as Int32Array, OW, ow + BLOCK);
     Atomics.store(ctrl as Int32Array, IR, ir + BLOCK);
+
+    post({ type: "scope", z: z.slice() });
 
     const ms = Date.now() - t0;
     blocks++;
     sumMs += ms;
     if (ms > maxMs) maxMs = ms;
-    if (ms > 45) {
-      slowCount++;
-      if (slowSamples.length >= 20) slowSamples.shift();
-      slowSamples.push(ms);
-    }
     if (blocks % 2 === 0) {
       const underruns = Atomics.load(ctrl as Int32Array, UNDERRUN);
       post({
@@ -147,6 +170,6 @@ self.onmessage = async (e: MessageEvent<RealtimeMsg>) => {
 
   post({
     type: "rt-log",
-    message: `loop ended: total=${blocks} slow(${slowCount}) samples=${slowSamples.join(",")}`,
+    message: `loop ended: total=${blocks}`,
   });
 };

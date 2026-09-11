@@ -7,13 +7,17 @@ __pycache__/
 # Exported models / generated artifacts (CC-BY-NC-4.0, gitignored)
 benchmarks/export/*.onnx
 benchmarks/browser-parity/*.bin
+benchmarks/models/*/*.onnx
+benchmarks/models/*/*.bin
+web/public/models/**/*.onnx
+web/public/models/**/*.bin
 web/public/models/*.onnx
 web/public/models/*.bin
 web/public/parity/*.bin
 *.sarif
-.DS_Storeweb/test/*.wav
+.DS_Store
+web/test/*.wav
 web/node_modules/
 web/dist/
 web/test-results/
 web/playwright-report/
-web/test/*.wav

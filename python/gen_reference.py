@@ -39,11 +39,13 @@ F = __import__("torch.nn.functional", fromlist=["F"])
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--run-dir", default=os.path.join(os.path.dirname(__file__), "RAVE"))
-    ap.add_argument("--config", default="rave/configs/v2.gin")
+    ap.add_argument("--config", default="rave/configs/v2_rt.gin")
     ap.add_argument("--out", default="benchmarks/browser-parity")
     ap.add_argument("--block", type=int, default=2048)
     ap.add_argument("--buffers", type=int, default=128)
     ap.add_argument("--fidelity", type=float, default=0.95)
+    ap.add_argument("--latent-size", type=int, default=None,
+                    help="override the fidelity-derived latent cut")
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args(argv)
 
@@ -53,8 +55,22 @@ def main(argv=None):
     gin.parse_config_file(os.path.join(args.run_dir, args.config))
 
     model = parity.build_rave(args.run_dir, args.config, args.seed)
-    latent_size = parity.compute_latent_size(model, args.fidelity)
     full_latent = model.latent_size
+
+    # Prefer the latent cut recorded in the (already exported) default manifest,
+    # so gen_reference and export_models can never disagree.
+    existing_manifest = os.path.join("benchmarks/export/manifest.json")
+    if os.path.exists(existing_manifest):
+        with open(existing_manifest) as f:
+            existing_cut = json.load(f).get("latent_size")
+    else:
+        existing_cut = None
+    if args.latent_size is not None:
+        latent_size = args.latent_size
+    elif existing_cut is not None:
+        latent_size = existing_cut
+    else:
+        latent_size = parity.compute_latent_size(model, args.fidelity)
 
     parity.warmup(model, args.block)
     ref = __import__("copy").deepcopy(model)

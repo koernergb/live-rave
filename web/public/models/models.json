@@ -1,0 +1,112 @@
+[
+  {
+    "key": "v2rt-s0",
+    "label": "v2-live \u00b7 seed 0",
+    "arch": "v2_rt",
+    "seed": 0,
+    "block_size": 2048,
+    "ratio": 2048,
+    "latent_steps": 1,
+    "latent_size": 16,
+    "full_latent_size": 128,
+    "bytes": {
+      "encoder": 17412620,
+      "decoder": 16367343,
+      "warmup": 176960
+    },
+    "urls": {
+      "encoder": "models/encoder.onnx",
+      "decoder": "models/decoder.onnx",
+      "manifest": "models/manifest.json",
+      "warmup": "models/warmup.bin"
+    }
+  },
+  {
+    "key": "v2-s0",
+    "label": "v2 \u00b7 seed 0",
+    "arch": "v2",
+    "seed": 0,
+    "block_size": 2048,
+    "ratio": 2048,
+    "latent_steps": 1,
+    "latent_size": 16,
+    "full_latent_size": 128,
+    "bytes": {
+      "encoder": 64362082,
+      "decoder": 62181691,
+      "warmup": 348416
+    },
+    "urls": {
+      "encoder": "models/v2-s0/encoder.onnx",
+      "decoder": "models/v2-s0/decoder.onnx",
+      "manifest": "models/v2-s0/manifest.json",
+      "warmup": "models/v2-s0/warmup.bin"
+    }
+  },
+  {
+    "key": "v2-s1",
+    "label": "v2 \u00b7 seed 1",
+    "arch": "v2",
+    "seed": 1,
+    "block_size": 2048,
+    "ratio": 2048,
+    "latent_steps": 1,
+    "latent_size": 16,
+    "full_latent_size": 128,
+    "bytes": {
+      "encoder": 64362082,
+      "decoder": 62181691,
+      "warmup": 348416
+    },
+    "urls": {
+      "encoder": "models/v2-s1/encoder.onnx",
+      "decoder": "models/v2-s1/decoder.onnx",
+      "manifest": "models/v2-s1/manifest.json",
+      "warmup": "models/v2-s1/warmup.bin"
+    }
+  },
+  {
+    "key": "v2-s2",
+    "label": "v2 \u00b7 seed 2",
+    "arch": "v2",
+    "seed": 2,
+    "block_size": 2048,
+    "ratio": 2048,
+    "latent_steps": 1,
+    "latent_size": 16,
+    "full_latent_size": 128,
+    "bytes": {
+      "encoder": 64362082,
+      "decoder": 62181691,
+      "warmup": 348416
+    },
+    "urls": {
+      "encoder": "models/v2-s2/encoder.onnx",
+      "decoder": "models/v2-s2/decoder.onnx",
+      "manifest": "models/v2-s2/manifest.json",
+      "warmup": "models/v2-s2/warmup.bin"
+    }
+  },
+  {
+    "key": "v2-s3",
+    "label": "v2 \u00b7 seed 3",
+    "arch": "v2",
+    "seed": 3,
+    "block_size": 2048,
+    "ratio": 2048,
+    "latent_steps": 1,
+    "latent_size": 16,
+    "full_latent_size": 128,
+    "bytes": {
+      "encoder": 64362082,
+      "decoder": 62181691,
+      "warmup": 348416
+    },
+    "urls": {
+      "encoder": "models/v2-s3/encoder.onnx",
+      "decoder": "models/v2-s3/decoder.onnx",
+      "manifest": "models/v2-s3/manifest.json",
+      "warmup": "models/v2-s3/warmup.bin"
+    }
+  }
+]
