@@ -9,6 +9,7 @@ from .convs import (Branches, CachedConv1d, CachedConvTranspose1d,
 from .convs import Conv1d as _Conv1d
 from .convs import ConvTranspose1d as _ConvTranspose1d
 from .convs import get_padding
+from .convs import use_iil_compat
 
 USE_BUFFER_CONV = False
 
@@ -40,7 +41,10 @@ def Conv1d(*args, **kwargs):
         return _Conv1d(*args, **kwargs)
 
 
-def ConvTranspose1d(*args, **kwargs):
+def ConvTranspose1d(*args, causal=False, **kwargs):
+    # `causal` is an architecture flag used by the IIL low-latency RAVE fork.
+    # Cached transposed convolution already carries its overlap explicitly, so
+    # the streaming implementation does not need a separate module type.
     if USE_BUFFER_CONV:
         return CachedConvTranspose1d(*args, **kwargs)
     else:

@@ -19,6 +19,10 @@ test("browser repeatedly (WASM) reproduces the Python reference", async ({
 
   await page.goto(url);
   await expect(page).toHaveTitle(/RAVE-Live/);
+  await expect(page.locator("#status")).toContainText(
+    "models loaded: v2-live · seed 0",
+    { timeout: 60_000 },
+  );
 
   await page.click("#parity");
   await expect
@@ -40,6 +44,12 @@ test("file mode runs end-to-end and produces a WAV", async ({ page }) => {
 
   const src = resolve(root, "test", "input.wav");
   await page.goto(url);
+  await page.selectOption("#model-select", "organ-archive-b2048");
+  await expect(page.locator("#status")).toContainText(
+    "models loaded: Organ Archive · trained (IIL, offline)",
+    { timeout: 60_000 },
+  );
+  await expect(page.locator("#rt-start")).toBeDisabled();
   await page.setInputFiles("#file", src);
   await page.click("#run");
 

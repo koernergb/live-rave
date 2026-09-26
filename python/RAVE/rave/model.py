@@ -158,6 +158,7 @@ class RAVE(pl.LightningModule):
         input_mode: str = "pqmf",
         output_mode: str = "pqmf",
         audio_monitor_epochs: int = 1,
+        freeze_encoder: bool = False,
         # for retro-compatibility
         enable_pqmf_encode: Optional[bool] = None,
         enable_pqmf_decode: Optional[bool] = None,
@@ -508,4 +509,3 @@ class RAVE(pl.LightningModule):
         model = ['```'] + model + ['```']
         model = '\n'.join(model)
         tb.add_text("model", model)
-

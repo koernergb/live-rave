@@ -19,6 +19,9 @@ import os
 import sys
 import time
 
+# Prefer the pinned vendored cached_conv over any globally installed version.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "cached_conv"))
+
 import torch
 import torch.nn.functional as F
 
@@ -36,7 +39,7 @@ import onnxruntime as ort
 import streaming_rave
 
 
-def build_rave(run_dir, config, seed):
+def build_rave(run_dir, config, seed, checkpoint=None):
     run_dir = os.path.abspath(run_dir)
     sys.path.insert(0, run_dir)
 
@@ -45,12 +48,18 @@ def build_rave(run_dir, config, seed):
     import rave
 
     cc.use_cached_conv(True)
+    if checkpoint is not None:
+        cc.use_iil_compat(True)
 
     gin.clear_config()
     gin.parse_config_file(os.path.abspath(os.path.join(run_dir, config)))
 
     torch.manual_seed(seed)
     model = rave.RAVE()
+    if checkpoint is not None:
+        saved = torch.load(checkpoint, map_location="cpu")
+        state = saved.get("state_dict", saved)
+        model.load_state_dict(state, strict=True)
     model.eval()
     return model
 
@@ -119,15 +128,25 @@ def main(argv=None):
     ap.add_argument("--buffers", type=int, default=10000)
     ap.add_argument("--fidelity", type=float, default=0.95)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--checkpoint",
+                    help="trained Lightning checkpoint to load strictly")
+    ap.add_argument("--latent-size", type=int,
+                    help="explicit exported latent cut (overrides --fidelity)")
+    ap.add_argument("--name", default="seeded RAVE")
+    ap.add_argument("--arch", default="v2")
+    ap.add_argument("--source-url")
+    ap.add_argument("--input-scale", type=float, default=1.0,
+                    help="scale deterministic parity audio (trained models: 0.1)")
     ap.add_argument("--no-export", action="store_true",
                     help="keep existing ONNX artifacts, skip re-export")
     args = ap.parse_args(argv)
 
     torch.set_grad_enabled(False)
     print(f"[1/6] building seeded RAVE model...", flush=True)
-    model = build_rave(args.run_dir, args.config, args.seed)
+    model = build_rave(args.run_dir, args.config, args.seed, args.checkpoint)
 
-    latent_size = compute_latent_size(model, args.fidelity)
+    latent_size = (args.latent_size if args.latent_size is not None
+                   else compute_latent_size(model, args.fidelity))
     full_latent_size = model.latent_size
     print(f"      latent_size={latent_size} full={full_latent_size} "
           f"sr={model.sr}", flush=True)
@@ -159,6 +178,10 @@ def main(argv=None):
             full_latent_size, ratio)
         manifest = {
             "seed": args.seed,
+            "name": args.name,
+            "arch": args.arch,
+            "trained": args.checkpoint is not None,
+            "source_url": args.source_url,
             "block_size": args.block,
             "ratio": ratio,
             "sampling_rate": int(model.sr),
@@ -171,13 +194,16 @@ def main(argv=None):
         }
         with open(os.path.join(args.out, "manifest.json"), "w") as f:
             json.dump(manifest, f, indent=2)
+        with open(os.path.join(args.out, "warmup.bin"), "wb") as f:
+            for tensor in warm_enc + warm_dec:
+                f.write(tensor.flatten().numpy().tobytes())
     else:
         meta_enc, meta_dec = {}, {}
 
     n = args.buffers
     print(f"[4/6] preparing {n} buffers of {args.block} samples", flush=True)
     torch.manual_seed(1234)
-    audio = torch.randn(1, 1, n * args.block)
+    audio = torch.randn(1, 1, n * args.block) * args.input_scale
 
     enc_sess = ort.InferenceSession(
         os.path.join(args.out, "encoder.onnx"),

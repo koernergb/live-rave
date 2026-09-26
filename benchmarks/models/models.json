@@ -22,6 +22,30 @@
     }
   },
   {
+    "key": "organ-archive-b2048",
+    "label": "Organ Archive · trained (IIL, offline)",
+    "arch": "organ_archive_b2048",
+    "seed": 0,
+    "trained": true,
+    "realtime": false,
+    "block_size": 2048,
+    "ratio": 2048,
+    "latent_steps": 1,
+    "latent_size": 16,
+    "full_latent_size": 128,
+    "bytes": {
+      "encoder": 64357048,
+      "decoder": 62155514,
+      "warmup": 242816
+    },
+    "urls": {
+      "encoder": "models/organ-archive-b2048/encoder.onnx",
+      "decoder": "models/organ-archive-b2048/decoder.onnx",
+      "manifest": "models/organ-archive-b2048/manifest.json",
+      "warmup": "models/organ-archive-b2048/warmup.bin"
+    }
+  },
+  {
     "key": "v2-s0",
     "label": "v2 \u00b7 seed 0",
     "arch": "v2",

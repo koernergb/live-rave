@@ -2,7 +2,6 @@
 import { loadModelBundle, ModelUrls } from "./models";
 import { RavePipeline } from "./pipeline";
 import {
-  BLOCK,
   IR,
   IW,
   OW,
@@ -18,6 +17,7 @@ export interface RealtimeStartMsg {
   control: SharedArrayBuffer;
   rings: SharedArrayBuffer;
   cap: number;
+  blockSize: number;
   slackBlocks: number;
   urls: ModelUrls;
   buffers?: { encoder: ArrayBuffer; decoder: ArrayBuffer };
@@ -98,13 +98,14 @@ self.onmessage = async (e: MessageEvent<RealtimeMsg>) => {
   const fl = bundle.manifest.full_latent_size;
   const ls = bundle.manifest.latent_size;
   const T = pipeline.latentSteps;
+  const block = m.blockSize;
   bias = new Float32Array(ls).fill(0);
   scale = new Float32Array(ls).fill(1);
 
   let rng = mulberry32(0x5eed);
   const eps = new Float32Array(fl * T);
   const noise = new Float32Array((fl - ls) * T);
-  const buf = new Float32Array(BLOCK);
+  const buf = new Float32Array(block);
 
   // Prime: warm a block so the output ring starts `slack` blocks ahead; first
   // connect never underruns. Read-ahead equals the stability slider (+ the
@@ -116,9 +117,9 @@ self.onmessage = async (e: MessageEvent<RealtimeMsg>) => {
     scale,
   });
   for (let b = 0; b < slack; b++) {
-    writeRing(data as Float32Array, cap, b * BLOCK, primeY, 0, BLOCK);
+    writeRing(data as Float32Array, cap, b * block, primeY, 0, block);
   }
-  Atomics.store(ctrl as Int32Array, OW, slack * BLOCK);
+  Atomics.store(ctrl as Int32Array, OW, slack * block);
 
   post({ type: "ready", ok: true });
   post({ type: "rt-log", message: `models loaded + primed (slack=${slack})` });
@@ -133,22 +134,22 @@ self.onmessage = async (e: MessageEvent<RealtimeMsg>) => {
     const ir = Atomics.load(ctrl as Int32Array, IR);
     const ow = Atomics.load(ctrl as Int32Array, OW);
     const orr = Atomics.load(ctrl as Int32Array, OR);
-    if (iw - ir < BLOCK || ow - orr >= cap - BLOCK + 1) {
+    if (iw - ir < block || ow - orr >= cap - block + 1) {
       lastEv = Atomics.load(ctrl as Int32Array, WORK_EV);
       Atomics.wait(ctrl as Int32Array, WORK_EV, lastEv);
       continue;
     }
 
     const t0 = Date.now();
-    readRing(data as Float32Array, cap, ir, BLOCK, buf, 0);
+    readRing(data as Float32Array, cap, ir, block, buf, 0);
     // Sampling latent: tightened around the mean (zero eps) by default.
     for (let i = 0; i < fl * T; i++) eps[i] = 0;
     for (let i = 0; i < (fl - ls) * T; i++) noise[i] = (rng() * 2 - 1) * noiseGain;
 
     const { y, z } = await pipeline.process(buf, eps, noise, { bias, scale });
-    writeRing(data as Float32Array, cap, ow, y, 0, BLOCK);
-    Atomics.store(ctrl as Int32Array, OW, ow + BLOCK);
-    Atomics.store(ctrl as Int32Array, IR, ir + BLOCK);
+    writeRing(data as Float32Array, cap, ow, y, 0, block);
+    Atomics.store(ctrl as Int32Array, OW, ow + block);
+    Atomics.store(ctrl as Int32Array, IR, ir + block);
 
     post({ type: "scope", z: z.slice() });
 

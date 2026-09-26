@@ -32,7 +32,7 @@ test("M4 live UI: picker, latent controls, EQ net, realtime scope (0 underruns)"
 
   // Catalog picker: >=4 lazy-load options with MB sizes; default model boots.
   const options = page.locator("#model-select option");
-  await expect(options).toHaveCount(5);
+  await expect(options).toHaveCount(6);
   await expect(page.locator("#model-info")).toContainText("MB");
   const status = page.locator("#status");
   await expect(status).toContainText("models loaded: v2-live · seed 0");

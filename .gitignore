@@ -6,6 +6,9 @@ __pycache__/
 
 # Exported models / generated artifacts (CC-BY-NC-4.0, gitignored)
 benchmarks/export/*.onnx
+benchmarks/checkpoints/
+benchmarks/trained-*/
+web/:memory:.ses
 benchmarks/browser-parity/*.bin
 benchmarks/models/*/*.onnx
 benchmarks/models/*/*.bin

@@ -87,9 +87,11 @@ class DilatedUnit(nn.Module):
         dim: int,
         kernel_size: int,
         dilation: int,
-        activation: Callable[[int], nn.Module] = lambda dim: nn.LeakyReLU(.2)
+        activation: Callable[[int], nn.Module] = lambda dim: nn.LeakyReLU(.2),
+        group_size: int = 2**16,
     ) -> None:
         super().__init__()
+        groups = max(1, dim // group_size)
         net = [
             activation(dim),
             normalization(
@@ -97,6 +99,7 @@ class DilatedUnit(nn.Module):
                           dim,
                           kernel_size=kernel_size,
                           dilation=dilation,
+                          groups=groups,
                           padding=cc.get_padding(
                               kernel_size,
                               dilation=dilation,
@@ -613,8 +616,13 @@ class GeneratorV2(nn.Module):
         noise_module: Optional[NoiseGeneratorV2] = None,
         activation: Callable[[int], nn.Module] = lambda dim: nn.LeakyReLU(.2),
         adain: Optional[Callable[[int], nn.Module]] = None,
+        causal_convtranspose: bool = False,
+        group_size: int = 2**16,
+        group_resample: bool = False,
+        clip: Optional[str] = "tanh",
     ) -> None:
         super().__init__()
+        self.clip = clip
         if data_size is None:
             data_size = n_channels
         else:
@@ -648,13 +656,26 @@ class GeneratorV2(nn.Module):
             else:
                 out_channels = num_channels // 2
             net.append(activation(num_channels))
-            net.append(
-                normalization(
-                    cc.ConvTranspose1d(num_channels,
-                                       out_channels,
-                                       2 * r,
-                                       stride=r,
-                                       padding=r // 2)))
+            groups = (max(1, min(num_channels, out_channels) // 8)
+                      if group_resample else 1)
+            if r > 1:
+                net.append(
+                    normalization(
+                        cc.ConvTranspose1d(num_channels,
+                                           out_channels,
+                                           2 * r,
+                                           stride=r,
+                                           padding=r // 2,
+                                           groups=groups,
+                                           causal=causal_convtranspose)))
+            else:
+                net.append(
+                    normalization(
+                        cc.Conv1d(num_channels,
+                                  out_channels,
+                                  3,
+                                  groups=groups,
+                                  padding=cc.get_padding(3))))
 
             num_channels = out_channels
 
@@ -668,6 +689,7 @@ class GeneratorV2(nn.Module):
                             dim=num_channels,
                             kernel_size=kernel_size,
                             dilation=d,
+                            group_size=group_size,
                         )))
 
         net.append(activation(num_channels))
@@ -708,7 +730,11 @@ class GeneratorV2(nn.Module):
 
         x = x + noise
 
-        return torch.tanh(x)
+        if self.clip is None:
+            return x
+        if self.clip == "tanh":
+            return torch.tanh(x)
+        raise ValueError(f"unknown output clip: {self.clip}")
 
     def set_warmed_up(self, state: bool):
         pass

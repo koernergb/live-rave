@@ -2,6 +2,13 @@ import torch
 import torch.nn as nn
 
 MAX_BATCH_SIZE = 64
+IIL_COMPAT = False
+
+
+def use_iil_compat(enabled=True):
+    """Use the low-latency padding convention from the IIL RAVE fork."""
+    global IIL_COMPAT
+    IIL_COMPAT = enabled
 
 
 def get_padding(kernel_size, stride=1, dilation=1, mode="centered"):
@@ -25,7 +32,8 @@ def get_padding(kernel_size, stride=1, dilation=1, mode="centered"):
     """
     if kernel_size == 1: return (0, 0)
     p = (kernel_size - 1) * dilation + 1
-    half_p = p // 2
+    if IIL_COMPAT:
+        p -= stride - 1
     if mode == "centered":
         p_right = p // 2
         p_left = (p - 1) // 2
@@ -37,7 +45,7 @@ def get_padding(kernel_size, stride=1, dilation=1, mode="centered"):
         p_left = 0
     else:
         raise Exception(f"Padding mode {mode} is not valid")
-    return (p_left, p_right)
+    return (max(0, p_left), max(0, p_right))
 
 
 class CachedSequential(nn.Sequential):

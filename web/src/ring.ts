@@ -9,7 +9,6 @@
  * lives in a second SAB as a Float32Array split into two equal rings.
  */
 
-export const BLOCK = 2048; // model block size (samples, 46.4 ms @ 44.1 kHz)
 export const QUANTUM = 128; // AudioWorklet quantum
 export const RING_BLOCKS = 8; // output slack: ~371 ms headroom over spikes
 
@@ -23,8 +22,8 @@ export const LIVE = 6; // set by main when output connects (streaming gate)
 
 export const CONTROL_LEN = 7;
 
-export function ringCap(blocks = RING_BLOCKS): number {
-  return BLOCK * blocks;
+export function ringCap(blockSize: number, blocks = RING_BLOCKS): number {
+  return blockSize * blocks;
 }
 
 export interface Rings {
@@ -36,8 +35,8 @@ export interface Rings {
   blocks: number;
 }
 
-export function makeRings(blocks = RING_BLOCKS): Rings {
-  const cap = ringCap(blocks);
+export function makeRings(blockSize: number, blocks = RING_BLOCKS): Rings {
+  const cap = ringCap(blockSize, blocks);
   const sabControl = new SharedArrayBuffer(CONTROL_LEN * 4);
   const sabData = new SharedArrayBuffer(cap * 2 * 4);
   return {

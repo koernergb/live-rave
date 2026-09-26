@@ -64,12 +64,13 @@ export async function createRealtime(
   opts: CreateRealtimeOptions,
 ): Promise<Realtime> {
   const { log, tick, onScope, onError } = opts;
+  const manifest: RaveManifest = await fetch(opts.urls.manifest).then((r) => r.json());
   // Ring cap = slack + 4 blocks of write-side guard so the worker never has to
   // stall while it processes.
   const ringBlocks = opts.slackBlocks + 4;
-  const rings = makeRings(ringBlocks);
+  const rings = makeRings(manifest.block_size, ringBlocks);
   const ctx = new AudioContext({
-    sampleRate: 44100,
+    sampleRate: manifest.sampling_rate,
     latencyHint: "interactive",
   });
 
@@ -104,10 +105,6 @@ export async function createRealtime(
     new URL("./realtime-worker.ts", import.meta.url),
     { type: "module" },
   );
-  let manifest: RaveManifest | null = null;
-  const loadManifest = async () =>
-    manifest ??= await fetch(opts.urls.manifest).then((r) => r.json());
-
   let _running = false;
   let connected = false;
   let blocks = 0;
@@ -155,7 +152,6 @@ export async function createRealtime(
   };
 
   const latency = (): number => {
-    if (!manifest) return 0;
     const blockMs = (manifest.block_size / manifest.sampling_rate) * 1000;
     const extra =
       ctx.baseLatency * 1000 +
@@ -171,7 +167,6 @@ export async function createRealtime(
           "serve with COOP/COEP headers",
       );
     }
-    manifest = await loadManifest();
     if (!source) {
       stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -198,6 +193,7 @@ export async function createRealtime(
       control: rings.sabControl,
       rings: rings.sabData,
       cap: rings.cap,
+      blockSize: manifest.block_size,
       slackBlocks: opts.slackBlocks,
       urls: opts.urls,
       buffers,

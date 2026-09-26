@@ -99,6 +99,17 @@ class PureEncoder:
             out = self._fresh()
             self.emit(f'{out} = F.leaky_relu({cur}, 0.2)')
             return out
+        if m.__class__.__name__ == "Snake":
+            out = self._fresh()
+            ref = f'_M[{self._full(name)!r}].alpha'
+            self.emit(f'{out} = {cur} + ({ref} + 1e-9).reciprocal() * '
+                      f'({ref} * {cur}).sin().pow(2)')
+            return out
+        if m.__class__.__name__ == "AdaptiveInstanceNormalization":
+            # A freshly loaded checkpoint has learning/transfer disabled, so
+            # AdaIN is an identity. Stateful style capture is intentionally not
+            # part of the browser runtime contract.
+            return cur
         if isinstance(m, torch.nn.Identity):
             return cur
         if isinstance(m, sr.Residual):

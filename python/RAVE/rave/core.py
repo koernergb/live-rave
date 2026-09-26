@@ -273,7 +273,8 @@ class MultiScaleSTFT(nn.Module):
                  sample_rate: int,
                  magnitude: bool = True,
                  normalized: bool = False,
-                 num_mels: Optional[int] = None) -> None:
+                 num_mels: Optional[int] = None,
+                 random_crop: bool = False) -> None:
         super().__init__()
         self.scales = scales
         self.magnitude = magnitude
@@ -558,4 +559,3 @@ def get_valid_extensions():
         return ['.'+f for f in torchaudio.utils.ffmpeg_utils.get_audio_decoders()]
     elif backend == "soundfile":
         return ['.wav', '.flac', '.ogg', '.aiff', '.aif', '.aifc']
-

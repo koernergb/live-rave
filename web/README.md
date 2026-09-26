@@ -59,21 +59,24 @@ RTF ≫ 1 — needs a GPU host to measure properly).
 
 ## Model catalog (M4)
 
-`python/export_models.py` builds 5 architecture variants from the pinned RAVE
-source (random-init weights, reproducible via `(config, seed)`), forces the
-latent cut to **16 dims** so the latent sliders act on real dimensions, and
-gates each on 64-buffer ONNX-vs-eager parity (< 1e-4). Only `models.json` (the
-catalog) and default `manifest.json` are committed — the `.onnx`/`.bin`
-artifacts are gitignored (CC-BY-NC-4.0).
+IIL's genuinely trained Organ Archive model is available for file processing.
+It is exported from the published checkpoint with 16 latent dimensions and
+passes 128-buffer ONNX-vs-eager streaming parity at **4.954e-05**. It misses
+the sustained WASM realtime deadline, so the realtime-capable `v2rt-s0`
+fixture remains the default. Five reproducible random-weight architecture
+variants remain in the picker as engineering fixtures. Generated
+`.onnx`/`.bin` artifacts are gitignored (CC-BY-NC-4.0).
 
 | key | arch | cap | role |
 |---|---|---|---|
-| `v2rt-s0` | v2_rt (capacity 48, no FIR noise path) | **default live** | ~16 ms/block turnaround |
+| `v2rt-s0` | v2_rt (capacity 48, no FIR noise path) | **default live fixture** | ~16 ms/block turnaround |
+| `organ-archive-b2048` | trained IIL organ, 48 kHz | musical file mode | 380 underruns/60 s; realtime disabled |
 | `v2-s0…s3` | v2 (capacity 96) | studio picker | ~62 ms/block at 44.1k — too heavy for one-block deadlines |
 
 Notes / disclosure:
-- Checkpoints are **architecture variants with random-init weights**, exported
-  to ONNX for this demo; swap in any trained RAVE export to use real weights.
+- The organ checkpoint is from the
+  [IIL RAVE model collection](https://huggingface.co/Intelligent-Instruments-Lab/rave-models)
+  and is CC-BY-NC-4.0. The `v2*` picker entries are random-weight fixtures.
 - `v2_small` is **not** in the picker: its FIR excitation path uses
   `view_as_complex`/`rfft`/`irfft` plus an internal `rand_like` (→ ONNX
   `RandomNormalLike`), none of which are exportable/deterministic in torch 2.2.2.
@@ -149,12 +152,12 @@ which replays the exact M1-gate inputs. `.onnx`/`.bin` artifacts are gitignored
   no real WebGPU RTF number yet — only the negative results above.
 - **Threaded WASM:** hangs on load under COI in every attempt; therefore
   single-threaded is the shipped configuration and the only measured RTF.
+- **Trained realtime weights:** the integrated Organ Archive checkpoint is
+  musically useful in file mode but too heavy for sustained realtime WASM on
+  the tested host. The live default remains a random-weight runtime fixture.
 - **Memory:** `performance.memory` is not a standard and is unavailable in this
   worker context, so peak-memory rows in the M5 table are unimplemented rather
   than estimated.
-- **Trained weights:** checkpoints are random-init architecture variants; latent
-  knobs act on 16 real dims but there is no musical IR here until a trained
-  checkpoint is dropped in.
 - **v2_small:** not exportable deterministically (see the Model catalog note).
 
 Latency budget (measured, M4, default slack=4, v2-live @ 2048):

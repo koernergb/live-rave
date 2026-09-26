@@ -47,6 +47,8 @@ interface CatalogEntry {
   label: string;
   arch: string;
   seed: number;
+  trained?: boolean;
+  realtime?: boolean;
   block_size: number;
   ratio: number;
   latent_steps: number;
@@ -162,7 +164,7 @@ const renderModelInfo = () => {
   const c = current;
   const mb = ((c.bytes.encoder + c.bytes.decoder) / 1e6).toFixed(1);
   modelInfo.textContent =
-    `${c.arch} · seed ${c.seed} · ${c.block_size}-sample blocks @ ${c.ratio} ratio ` +
+    `${c.arch} · ${c.trained ? "trained" : `seed ${c.seed}`} · ${c.block_size}-sample blocks @ ${c.ratio} ratio ` +
     `· latent ${c.latent_size} dims × ${c.latent_steps} steps · ${mb} MB onnx`;
 };
 
@@ -181,15 +183,16 @@ void (async () => {
     modelSelect.appendChild(opt);
   }
   modelSelect.value = catalog[0].key;
-  current = catalog[0];
+  const initial = catalog[0];
+  current = initial;
   renderModelInfo();
   log(`catalog: ${catalog.length} models, default ${catalog[0].label}`);
-  const b = await preloadModel(current);
+  const b = await preloadModel(initial);
   worker.postMessage(
     {
       type: "load",
-      key: current.key,
-      urls: current.urls as any,
+      key: initial.key,
+      urls: initial.urls as any,
       buffers: b,
     },
     [b.encoder, b.decoder],
@@ -202,6 +205,10 @@ modelSelect.onchange = async () => {
   if (!next || next.key === current?.key) return;
   current = next;
   renderModelInfo();
+  rtStartBtn.disabled = next.realtime === false;
+  if (next.realtime === false) {
+    log(`${next.label}: file mode only (misses the sustained realtime deadline)`);
+  }
   log(`loading ${next.label} (lazy)...`);
   try {
     await loadIntoWorker(next);
@@ -212,7 +219,7 @@ modelSelect.onchange = async () => {
     rt.stop();
     rt = null;
     resetRtDisplay();
-    rtStartBtn.disabled = false;
+    rtStartBtn.disabled = next.realtime === false;
     rtStopBtn.disabled = true;
     log("realtime: stopped — restart to apply new model");
   }
@@ -502,7 +509,8 @@ dlBtn.onclick = () => {
 };
 
 document.getElementById("parity")!.onclick = async () => {
-  const def = catalog[0];
+  // The committed Python reference bundle belongs to the original v2rt gate.
+  const def = catalog.find((m) => m.key === "v2rt-s0") ?? catalog[0];
   try {
     if (def.key !== pipelineKey) await loadIntoWorker(def);
   } catch (err) {
